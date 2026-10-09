@@ -1,0 +1,49 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go mod download
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - run: go vet ./...
+      - run: GOOS=linux GOARCH=arm64 go vet ./...
+      - run: go test ./...
+      - run: go test -race ./...
+      - run: make build
+
+  # Real namespaces, cgroup v2 and seccomp. GitHub's ubuntu runners are
+  # cgroup v2 hosts where the job runs as a passwordless-sudo user, so the
+  # Linux integration suite can run directly. If this job ever starts failing
+  # because the runner image changed, the suite still runs locally via
+  # `make test-integration` (privileged Docker) or on any Linux host.
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build rootfs
+        run: ./scripts/build-rootfs.sh ./rootfs
+      - name: Integration tests
+        run: |
+          sudo --preserve-env=PATH,HOME,GOPATH,GOCACHE,GOMODCACHE,GOFLAGS \
+            env SANDBOXD_TEST_ROOTFS="$PWD/rootfs" SANDBOXD_TEST_STATE=/var/lib/sandboxd \
+            "$(command -v go)" test -tags integration -count=1 ./internal/...
