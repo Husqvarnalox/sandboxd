@@ -1,0 +1,9 @@
+/bin/
+/rootfs/
+/rootfs.tar
+*.test
+*.out
+coverage.*
+/dist/
+.DS_Store
+/graphify-out/
