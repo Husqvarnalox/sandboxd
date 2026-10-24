@@ -40,10 +40,17 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      # Init runs as an unprivileged mapped uid, so the rootfs and every
+      # directory above it need o+x. The checkout lives under /home/runner,
+      # which is 0750, hence a rootfs outside it.
       - name: Build rootfs
-        run: ./scripts/build-rootfs.sh ./rootfs
+        run: |
+          sudo install -d -o "$(id -u)" -g "$(id -g)" -m 0755 /srv/sandboxd
+          ./scripts/build-rootfs.sh /srv/sandboxd/rootfs
+      # CGO_ENABLED=0 as in `make build`: with runtime/cgo linked (net/http
+      # pulls it in), init's AllThreadsSyscall calls fail with ENOTSUP.
       - name: Integration tests
         run: |
           sudo --preserve-env=PATH,HOME,GOPATH,GOCACHE,GOMODCACHE,GOFLAGS \
-            env SANDBOXD_TEST_ROOTFS="$PWD/rootfs" SANDBOXD_TEST_STATE=/var/lib/sandboxd \
+            env CGO_ENABLED=0 SANDBOXD_TEST_ROOTFS=/srv/sandboxd/rootfs SANDBOXD_TEST_STATE=/var/lib/sandboxd \
             "$(command -v go)" test -tags integration -count=1 ./internal/...
