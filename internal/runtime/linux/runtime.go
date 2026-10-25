@@ -85,7 +85,10 @@ func New(cfg Config) (*Runtime, error) {
 		return nil, fmt.Errorf("runtime config: init binary %s is not executable", cfg.InitPath)
 	}
 	if cfg.UserNS {
-		if err := checkWorldExecutable(cfg.InitPath); err != nil {
+		if err := checkWorldExecutable("init binary", cfg.InitPath); err != nil {
+			return nil, fmt.Errorf("runtime config: %w", err)
+		}
+		if err := checkWorldExecutable("rootfs", cfg.Rootfs); err != nil {
 			return nil, fmt.Errorf("runtime config: %w", err)
 		}
 	}
@@ -137,26 +140,28 @@ func (r *Runtime) Check() error {
 	return nil
 }
 
-// checkWorldExecutable verifies that an unprivileged uid can execute path.
-// With user namespaces, init is exec'd as the mapped sandbox root (host uid
-// HostUIDBase), which owns nothing on the host, so only "other" permission
-// bits apply to the binary and every directory above it.
-func checkWorldExecutable(path string) error {
+// checkWorldExecutable verifies that an unprivileged uid can execute (or, for
+// a directory, traverse) path. With user namespaces, init is exec'd as the
+// mapped sandbox root (host uid HostUIDBase), which owns nothing on the host,
+// so only "other" permission bits apply to path and every directory above it.
+// That covers both the init binary and the rootfs init bind-mounts; a rootfs
+// under a 0750 home directory would otherwise fail later with a bare EACCES.
+func checkWorldExecutable(what, path string) error {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return err
 	}
 	abs, err = filepath.EvalSymlinks(abs)
 	if err != nil {
-		return fmt.Errorf("init binary: %w", err)
+		return fmt.Errorf("%s: %w", what, err)
 	}
 	for p := abs; ; p = filepath.Dir(p) {
 		st, err := os.Stat(p)
 		if err != nil {
-			return fmt.Errorf("init binary: %w", err)
+			return fmt.Errorf("%s: %w", what, err)
 		}
 		if st.Mode().Perm()&0o001 == 0 {
-			return fmt.Errorf("init binary %s is not executable by the sandbox user: %s lacks o+x", abs, p)
+			return fmt.Errorf("%s %s is not reachable by the sandbox user: %s lacks o+x", what, abs, p)
 		}
 		if p == "/" {
 			return nil

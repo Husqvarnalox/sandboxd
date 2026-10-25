@@ -71,6 +71,12 @@ func errno(err error) string {
 }
 
 func TestSeccompBlocksInChild(t *testing.T) {
+	// The helper applies no_new_privs and the filter with AllThreadsSyscall,
+	// which returns ENOTSUP once runtime/cgo is linked in (always the case
+	// under -race). sandboxd itself is built with CGO_ENABLED=0.
+	if _, _, e := syscall.AllThreadsSyscall(unix.SYS_PRCTL, unix.PR_GET_NO_NEW_PRIVS, 0, 0); e == unix.ENOTSUP {
+		t.Skip("AllThreadsSyscall unavailable in a cgo build (e.g. -race)")
+	}
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)

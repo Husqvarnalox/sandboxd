@@ -430,7 +430,7 @@ func TestMemoryLimitOOM(t *testing.T) {
 
 func TestPIDsLimit(t *testing.T) {
 	e := setup(t, true)
-	spec := e.spec(t, "sh", "-c", "for i in $(seq 1 100); do sleep 30 & done; wait")
+	spec := e.spec(t, "sh", "-c", "for i in $(seq 1 100); do sleep 301 & done; wait")
 	spec.Resources.PIDs = 8
 	r := e.start(t, spec)
 	waitUntil(t, 10*time.Second, "fork failure on stderr", func() bool {
@@ -456,8 +456,8 @@ func TestPIDsLimit(t *testing.T) {
 	if res.ExitCode == 0 {
 		t.Errorf("result = %+v, want failure", res)
 	}
-	if pids := findProcs("sleep30"); len(pids) > 0 {
-		t.Errorf("sleep 30 still running: %v", pids)
+	if pids := findProcs("sleep301"); len(pids) > 0 {
+		t.Errorf("sleep 301 still running: %v", pids)
 	}
 }
 
@@ -476,7 +476,7 @@ func TestSignalForwarded(t *testing.T) {
 
 func TestKillKillsEverything(t *testing.T) {
 	e := setup(t, true)
-	spec := e.spec(t, "sh", "-c", "sleep 100 & sleep 100 & wait")
+	spec := e.spec(t, "sh", "-c", "sleep 1001 & sleep 1001 & wait")
 	r := e.start(t, spec)
 	procsFile := filepath.Join(e.cgroupPath(spec), "cgroup.procs")
 	waitUntil(t, 10*time.Second, "init, sh and two sleeps in the cgroup", func() bool {
@@ -508,8 +508,8 @@ func TestKillKillsEverything(t *testing.T) {
 		b, err := os.ReadFile(procsFile)
 		return err == nil && len(bytes.TrimSpace(b)) == 0
 	})
-	if pids := findProcs("sleep100"); len(pids) > 0 {
-		t.Errorf("sleep 100 still running: %v", pids)
+	if pids := findProcs("sleep1001"); len(pids) > 0 {
+		t.Errorf("sleep 1001 still running: %v", pids)
 	}
 	if err := r.proc.Kill(); err != nil {
 		t.Errorf("Kill after exit: %v", err)
@@ -527,6 +527,9 @@ func TestKillKillsEverything(t *testing.T) {
 }
 
 // findProcs returns pids whose NUL-joined argv equals cmdline with NULs removed.
+// It scans the whole host, and go test runs packages in parallel (the cgroup
+// and e2e suites start sleeps too), so callers use durations no other test
+// uses: a match must be a survivor of this test, not someone else's job.
 func findProcs(cmdline string) []int {
 	entries, _ := os.ReadDir("/proc")
 	var pids []int
